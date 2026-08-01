@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine, Base
-from app.routers import auth, users, resumes, skills, recommendations, interview, github
+from app.routers import auth, users, resumes, skills, recommendations, interview, github, analytics
 
 Base.metadata.create_all(bind=engine)
 
@@ -22,6 +22,7 @@ app.include_router(skills.router)
 app.include_router(recommendations.router)
 app.include_router(interview.router)
 app.include_router(github.router)
+app.include_router(analytics.router)
 
 @app.get("/")
 def root():
