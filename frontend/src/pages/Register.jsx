@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { BrainCircuit, Mail, Lock, User, ArrowRight, Eye, EyeOff, Check } from 'lucide-react'
+import { register } from '../api/auth'
 
 const perks = [
   'AI-powered resume analysis and ATS scoring',
@@ -14,15 +15,25 @@ export default function Register() {
   const navigate = useNavigate()
   const [form, setForm] = useState({ name: '', email: '', password: '' })
   const [showPass, setShowPass] = useState(false)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    navigate('/dashboard')
+    setError('')
+    setLoading(true)
+    try {
+      await register(form.name, form.email, form.password)
+      navigate('/login')
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Registration failed')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] flex animated-bg">
-      {/* Left panel */}
       <div className="hidden md:flex flex-col justify-between w-1/2 p-12 border-r border-white/5">
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
@@ -46,29 +57,11 @@ export default function Register() {
               </div>
             ))}
           </div>
-          <div className="glass rounded-2xl p-5 mt-8">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="flex -space-x-2">
-                {['from-indigo-500 to-purple-500', 'from-pink-500 to-rose-500', 'from-cyan-500 to-blue-500'].map((g, i) => (
-                  <div key={i} className={`w-7 h-7 rounded-full bg-gradient-to-br ${g} border-2 border-[#0a0a0f] flex items-center justify-center text-xs font-semibold text-white`}>
-                    {['A','B','C'][i]}
-                  </div>
-                ))}
-              </div>
-              <span className="text-xs text-gray-500">Join 2,400+ professionals</span>
-            </div>
-            <div className="flex gap-1">
-              {[1,2,3,4,5].map(i => <div key={i} className="w-2.5 h-2.5 rounded-full bg-yellow-400" />)}
-              <span className="text-xs text-gray-500 ml-1">4.9/5 rating</span>
-            </div>
-          </div>
         </div>
       </div>
 
-      {/* Right panel */}
       <div className="flex-1 flex items-center justify-center px-6">
         <div className="w-full max-w-sm">
-          {/* Mobile logo */}
           <div className="flex md:hidden items-center gap-2 mb-8 cursor-pointer" onClick={() => navigate('/')}>
             <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
               <BrainCircuit size={14} className="text-white" />
@@ -80,6 +73,12 @@ export default function Register() {
             <h2 className="text-2xl font-bold text-white mb-1">Create your account</h2>
             <p className="text-gray-500 text-sm">Start your AI-powered career journey today</p>
           </div>
+
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-sm px-4 py-3 rounded-xl mb-4">
+              {error}
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div>
@@ -119,25 +118,17 @@ export default function Register() {
                   onChange={e => setForm({...form, password: e.target.value})}
                   className="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-10 py-3 text-white text-sm focus:outline-none focus:border-indigo-500 focus:bg-indigo-500/5 transition placeholder-gray-700"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPass(!showPass)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400 transition"
-                >
+                <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400 transition">
                   {showPass ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
             </div>
-            <p className="text-xs text-gray-700">
-              By creating an account you agree to our{' '}
-              <span className="text-indigo-400 cursor-pointer">Terms of Service</span> and{' '}
-              <span className="text-indigo-400 cursor-pointer">Privacy Policy</span>.
-            </p>
             <button
               type="submit"
-              className="bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-xl font-medium transition flex items-center justify-center gap-2 glow"
+              disabled={loading}
+              className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white py-3 rounded-xl font-medium transition flex items-center justify-center gap-2 glow"
             >
-              Create account <ArrowRight size={15} />
+              {loading ? 'Creating account...' : <> Create account <ArrowRight size={15} /> </>}
             </button>
           </form>
 
@@ -147,7 +138,6 @@ export default function Register() {
               <Link to="/login" className="text-indigo-400 hover:text-indigo-300 transition">Sign in</Link>
             </p>
           </div>
-
           <p className="text-center text-xs text-gray-700 mt-4 cursor-pointer hover:text-gray-500 transition" onClick={() => navigate('/')}>
             ← Back to home
           </p>

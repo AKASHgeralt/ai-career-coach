@@ -1,61 +1,132 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+/* ===========================
+   Global Styles
+=========================== */
 
 * {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
   font-family: 'Inter', sans-serif;
 }
+
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100%;
+}
+
+body {
+  background: #0a0a0f;
+  color: white;
+  overflow-x: hidden;
+
+  background-image:
+    radial-gradient(circle at 20% 20%, rgba(99,102,241,0.12), transparent 30%),
+    radial-gradient(circle at 80% 10%, rgba(168,85,247,0.10), transparent 30%),
+    radial-gradient(circle at 50% 80%, rgba(59,130,246,0.08), transparent 40%);
+}
+
+/* ===========================
+   Scrollbar
+=========================== */
 
 ::-webkit-scrollbar {
   width: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: #0f0f13;
 }
+
 ::-webkit-scrollbar-thumb {
   background: #2a2a3a;
-  border-radius: 3px;
+  border-radius: 999px;
 }
 
+::-webkit-scrollbar-thumb:hover {
+  background: #4f46e5;
+}
+
+/* ===========================
+   Utility Classes
+=========================== */
+
 .glow {
-  box-shadow: 0 0 40px rgba(99, 102, 241, 0.15);
+  box-shadow: 0 0 40px rgba(99,102,241,0.15);
 }
 
 .glass {
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255,255,255,0.03);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.06);
 }
 
 .gradient-text {
-  background: linear-gradient(135deg, #818cf8, #c084fc, #38bdf8);
+  background: linear-gradient(
+      135deg,
+      #818cf8,
+      #c084fc,
+      #38bdf8
+  );
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
 .sidebar-glow {
-  box-shadow: inset -1px 0 0 rgba(99, 102, 241, 0.1);
+  box-shadow: inset -1px 0 0 rgba(99,102,241,0.1);
 }
 
 .card-hover {
-  transition: all 0.2s ease;
+  transition: all .25s ease;
 }
+
 .card-hover:hover {
-  transform: translateY(-2px);
-  border-color: rgba(99, 102, 241, 0.4);
-  box-shadow: 0 8px 32px rgba(99, 102, 241, 0.1);
+  transform: translateY(-4px);
+  border-color: rgba(99,102,241,.4);
+  box-shadow: 0 12px 35px rgba(99,102,241,.15);
 }
+
+/* ===========================
+   Animated Background
+=========================== */
 
 .animated-bg {
-  background: radial-gradient(ellipse at 20% 50%, rgba(99, 102, 241, 0.05) 0%, transparent 60%),
-              radial-gradient(ellipse at 80% 20%, rgba(192, 132, 252, 0.05) 0%, transparent 60%),
-              radial-gradient(ellipse at 50% 80%, rgba(56, 189, 248, 0.03) 0%, transparent 60%);
+  position: relative;
+  overflow: hidden;
 }
 
-body {
-  background-color: #0a0a0f;
-  color: white;
+.animated-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+      radial-gradient(circle at 20% 40%, rgba(99,102,241,.08), transparent 40%),
+      radial-gradient(circle at 80% 20%, rgba(192,132,252,.08), transparent 40%),
+      radial-gradient(circle at 60% 80%, rgba(56,189,248,.05), transparent 45%);
+  pointer-events: none;
+}
+
+/* ===========================
+   Smooth UI
+=========================== */
+
+button,
+input,
+textarea,
+select {
+  transition: all .2s ease;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
 }
