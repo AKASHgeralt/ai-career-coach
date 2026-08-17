@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from database import get_db
 from app.routers.users import get_current_user
@@ -8,9 +8,36 @@ from app.models.skill_gap import SkillGap
 from app.models.interview import InterviewSession
 from app.models.github import GitHubProfile
 from app.models.recommendation import Recommendation
+from app.services.roles import role_label
+from app.services.readiness_data import build_readiness
+from app.services.timeline import DEFAULT_LIMIT, build_progress_series, build_timeline
+from app.schemas.readiness import ReadinessOut
+from app.schemas.timeline import TimelineOut
 from collections import Counter
 
 router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
+
+@router.get("/timeline", response_model=TimelineOut)
+def get_timeline(
+    limit: int = Query(DEFAULT_LIMIT, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Career events in reverse-chronological order, plus per-signal series.
+
+    Built from real recorded timestamps only — no back-filled history.
+    """
+    events = build_timeline(db, current_user, limit=limit)
+    return {"events": events, "series": build_progress_series(events)}
+
+
+@router.get("/readiness", response_model=ReadinessOut)
+def get_readiness(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Career Readiness Score with a full, explainable component breakdown."""
+    return build_readiness(db, current_user)
 
 @router.get("/summary")
 def get_summary(
@@ -57,6 +84,9 @@ def get_summary(
         "user": {
             "full_name": current_user.full_name,
             "email": current_user.email,
+            "avatar_url": current_user.avatar_url,
+            "target_role": current_user.target_role,
+            "target_role_label": role_label(current_user.target_role),
         },
         "resumes": {
             "count": resume_count,

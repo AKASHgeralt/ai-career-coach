@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
@@ -7,6 +9,7 @@ from app.schemas.skill_gap import SkillGapRequest, SkillGapOut
 from app.routers.users import get_current_user
 from app.models.user import User
 from app.services.skill_gap_engine import analyze_skill_gap
+from app.services.roles import role_label, role_match_title
 
 router = APIRouter(prefix="/api/skills", tags=["Skills"])
 
@@ -25,16 +28,25 @@ def analyze_gap(
     if not resume.parsed_text:
         raise HTTPException(status_code=400, detail="Resume has no parsed text")
 
-    result = analyze_skill_gap(resume.parsed_text, request.job_description)
+    # An explicit job title always wins. When the user leaves it blank we fall
+    # back to their saved target role, so the analysis still has a baseline
+    # profile to compare against instead of silently reporting a 0% match.
+    explicit_title = (request.job_title or "").strip()
+    match_title = explicit_title or role_match_title(current_user.target_role)
+    stored_title = explicit_title or role_label(current_user.target_role)
+
+    result = analyze_skill_gap(resume.parsed_text, request.job_description, match_title)
 
     gap = SkillGap(
         user_id=current_user.id,
         resume_id=resume.id,
-        job_title=request.job_title,
+        job_title=stored_title,
         job_description=request.job_description,
         matched_skills=result["matched_skills"],
         missing_skills=result["missing_skills"],
-        match_score=result["match_score"]
+        skill_details=result["skill_details"],
+        match_score=result["match_score"],
+        used_role_fallback=result["used_role_fallback"]
     )
     db.add(gap)
     db.commit()
@@ -43,7 +55,7 @@ def analyze_gap(
 
 @router.get("/gaps/{resume_id}", response_model=list[SkillGapOut])
 def get_gaps(
-    resume_id: str,
+    resume_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
