@@ -26,3 +26,6 @@ verify_token.txt
 .vscode/*
 !.vscode/extensions.json
 .idea/
+
+# Stray npm lockfile in a Python-only directory
+backend/package-lock.json
