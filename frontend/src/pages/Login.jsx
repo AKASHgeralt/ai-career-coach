@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import { motion } from 'framer-motion'
 import { BrainCircuit, Mail, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react'
 import { login } from '../api/auth'
+import { WireTerrain } from '../components/Wire'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -19,113 +21,162 @@ export default function Login() {
       localStorage.setItem('token', data.access_token)
       navigate('/dashboard')
     } catch (err) {
-      setError('Invalid email or password')
+      // Don't report every failure as bad credentials — a blocked or
+      // unreachable API looks identical to the user otherwise, and sends
+      // them retyping a password that was never the problem.
+      if (!err.response) {
+        setError("Can't reach the API. Is the backend running on port 8000, and is this page on http://localhost:5173?")
+      } else if (err.response.status === 401) {
+        setError('Invalid email or password')
+      } else {
+        setError(err.response.data?.detail || `Login failed (${err.response.status})`)
+      }
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] flex animated-bg">
-      <div className="hidden md:flex flex-col justify-between w-1/2 p-12 border-r border-white/5">
-        <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-            <BrainCircuit size={16} className="text-white" />
+    <div className="min-h-screen bg-ink flex">
+      {/* Left — atmosphere */}
+      <div className="hidden md:flex flex-col justify-between w-1/2 p-14 border-r border-line relative overflow-hidden aurora dot-grid">
+        <div
+          className="flex items-center gap-3 cursor-pointer relative z-10 w-fit"
+          onClick={() => navigate('/')}
+        >
+          <div className="w-8 h-8 border border-line2 flex items-center justify-center">
+            <BrainCircuit size={15} className="text-accent" />
           </div>
-          <span className="font-semibold text-white">CareerAI</span>
+          <span className="text-sm tracking-[0.28em] uppercase text-white/90">CareerAI</span>
         </div>
-        <div>
-          <div className="glass rounded-2xl p-6 mb-6">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-sm font-semibold text-white">AK</div>
+
+        <div className="relative z-10">
+          <div className="panel ticked p-7 mb-10 max-w-sm">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-10 h-10 border border-line2 flex items-center justify-center text-xs tracking-widest text-accent">
+                AK
+              </div>
               <div>
-                <div className="text-sm font-medium text-white">Akash Kumar</div>
-                <div className="text-xs text-gray-500">Software Engineer</div>
+                <div className="text-sm font-light text-white">Akash Kumar</div>
+                <div className="label mt-0.5">Software Engineer</div>
               </div>
             </div>
-            <p className="text-gray-400 text-sm leading-relaxed">"CareerAI helped me identify exactly what skills I was missing. Got my dream job in 6 weeks."</p>
-            <div className="flex gap-1 mt-3">
-              {[1,2,3,4,5].map(i => <div key={i} className="w-3 h-3 rounded-full bg-yellow-400" />)}
+            <p className="text-mist text-sm font-light leading-relaxed">
+              "CareerAI helped me identify exactly what skills I was missing.
+              Got my dream job in 6 weeks."
+            </p>
+            <div className="flex gap-1.5 mt-4">
+              {[1, 2, 3, 4, 5].map(i => (
+                <div key={i} className="w-1.5 h-1.5 rounded-full bg-accent" style={{ boxShadow: '0 0 8px #4da6ff' }} />
+              ))}
             </div>
           </div>
-          <h2 className="text-4xl font-bold text-white leading-tight">
+
+          <h2 className="display text-5xl text-white">
             Your AI-powered<br />
-            <span className="gradient-text">career co-pilot</span>
+            <span className="accent-text">career co-pilot</span>
           </h2>
+        </div>
+
+        <div className="absolute bottom-0 left-0 right-0 h-56 pointer-events-none opacity-60">
+          <WireTerrain className="w-full h-full" lines={18} />
         </div>
       </div>
 
-      <div className="flex-1 flex items-center justify-center px-6">
-        <div className="w-full max-w-sm">
-          <div className="flex md:hidden items-center gap-2 mb-8 cursor-pointer" onClick={() => navigate('/')}>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-              <BrainCircuit size={14} className="text-white" />
+      {/* Right — form */}
+      <div className="flex-1 flex items-center justify-center px-6 py-12">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+          className="w-full max-w-sm"
+        >
+          <div
+            className="flex md:hidden items-center gap-3 mb-10 cursor-pointer"
+            onClick={() => navigate('/')}
+          >
+            <div className="w-7 h-7 border border-line2 flex items-center justify-center">
+              <BrainCircuit size={13} className="text-accent" />
             </div>
-            <span className="font-semibold text-white text-sm">CareerAI</span>
+            <span className="text-xs tracking-[0.28em] uppercase text-white/90">CareerAI</span>
           </div>
 
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold text-white mb-1">Welcome back</h2>
-            <p className="text-gray-500 text-sm">Sign in to continue your career journey</p>
+          <div className="mb-10">
+            <span className="label">Account access</span>
+            <h2 className="display text-4xl text-white mt-4 mb-2">Welcome back</h2>
+            <p className="text-mistDim text-sm font-light">Sign in to continue your career journey</p>
           </div>
 
           {error && (
-            <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-sm px-4 py-3 rounded-xl mb-4">
+            <motion.div
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="border border-red-500/30 bg-red-500/[0.07] text-red-300 text-sm px-4 py-3 mb-6 font-light"
+            >
               {error}
-            </div>
+            </motion.div>
           )}
 
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-5">
             <div>
-              <label className="text-xs text-gray-500 mb-1.5 block uppercase tracking-wider">Email</label>
+              <label className="label block mb-2.5">Email</label>
               <div className="relative">
-                <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" />
+                <Mail size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-mistDim" />
                 <input
                   type="email"
                   placeholder="you@example.com"
                   value={form.email}
-                  onChange={e => setForm({...form, email: e.target.value})}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500 focus:bg-indigo-500/5 transition placeholder-gray-700"
+                  onChange={e => setForm({ ...form, email: e.target.value })}
+                  className="field w-full pl-11 pr-4 py-3.5 text-sm font-light"
                 />
               </div>
             </div>
+
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs text-gray-500 uppercase tracking-wider">Password</label>
-              </div>
+              <label className="label block mb-2.5">Password</label>
               <div className="relative">
-                <Lock size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" />
+                <Lock size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-mistDim" />
                 <input
                   type={showPass ? 'text' : 'password'}
                   placeholder="••••••••"
                   value={form.password}
-                  onChange={e => setForm({...form, password: e.target.value})}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-10 py-3 text-white text-sm focus:outline-none focus:border-indigo-500 focus:bg-indigo-500/5 transition placeholder-gray-700"
+                  onChange={e => setForm({ ...form, password: e.target.value })}
+                  className="field w-full pl-11 pr-11 py-3.5 text-sm font-light"
                 />
-                <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400 transition">
-                  {showPass ? <EyeOff size={15} /> : <Eye size={15} />}
+                <button
+                  type="button"
+                  onClick={() => setShowPass(!showPass)}
+                  aria-label={showPass ? 'Hide password' : 'Show password'}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-mistDim hover:text-accent transition"
+                >
+                  {showPass ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </div>
             </div>
-            <button
+
+            <motion.button
+              whileTap={{ scale: 0.98 }}
               type="submit"
               disabled={loading}
-              className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white py-3 rounded-xl font-medium transition flex items-center justify-center gap-2 mt-1 glow"
+              className="btn-primary py-4 text-xs uppercase tracking-[0.2em] flex items-center justify-center gap-2.5 mt-2"
             >
-              {loading ? 'Signing in...' : <> Sign in <ArrowRight size={15} /> </>}
-            </button>
+              {loading ? 'Signing in…' : <>Sign in <ArrowRight size={14} /></>}
+            </motion.button>
           </form>
 
-          <div className="mt-6 pt-6 border-t border-white/5 text-center">
-            <p className="text-gray-600 text-sm">
-              Don't have an account?{' '}
-              <Link to="/register" className="text-indigo-400 hover:text-indigo-300 transition">Create one free</Link>
-            </p>
-          </div>
-          <p className="text-center text-xs text-gray-700 mt-4 cursor-pointer hover:text-gray-500 transition" onClick={() => navigate('/')}>
+          <div className="hairline my-8" />
+
+          <p className="text-mistDim text-sm font-light text-center">
+            Don't have an account?{' '}
+            <Link to="/register" className="text-accent hover:text-accent2 transition">Create one free</Link>
+          </p>
+          <p
+            className="text-center label mt-6 cursor-pointer hover:text-accent transition"
+            onClick={() => navigate('/')}
+          >
             ← Back to home
           </p>
-        </div>
+        </motion.div>
       </div>
     </div>
   )

@@ -1,16 +1,14 @@
-import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect, useMemo } from 'react'
+import { useNavigate, useLocation, Outlet } from 'react-router-dom'
+import { motion } from 'framer-motion'
 import {
   Home, FileText, BarChart2, BookOpen, MessageSquare,
-  GitBranch, Settings, LogOut, BrainCircuit, TrendingUp,
-  Upload, Bell, ChevronRight, Zap
+  GitBranch, Settings as SettingsIcon, LogOut, BrainCircuit,
+  Menu, X
 } from 'lucide-react'
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { getSummary } from '../api/analytics'
-import Resumes from './Resumes'
-import SkillGap from './Skillgap'
-import Interview from './Interview'
-import GitHub from './Github'
+import { avatarSrc } from '../api/client'
+import { getMe } from '../api/auth'
+import { PATH_FOR } from './dashboardSections'
 
 const navItems = [
   { icon: Home, label: 'Dashboard' },
@@ -19,104 +17,90 @@ const navItems = [
   { icon: BookOpen, label: 'Roadmap' },
   { icon: MessageSquare, label: 'Interview' },
   { icon: GitBranch, label: 'GitHub' },
-  { icon: Settings, label: 'Settings' },
+  { icon: SettingsIcon, label: 'Settings' },
 ]
 
-const chartData = [
-  { week: 'W1', score: 45 },
-  { week: 'W2', score: 52 },
-  { week: 'W3', score: 58 },
-  { week: 'W4', score: 61 },
-  { week: 'W5', score: 70 },
-  { week: 'W6', score: 74 },
-]
+function NavButton({ icon: Icon, label, active, onSelect }) {
+  const isActive = active === label
+  return (
+    <motion.button
+      whileTap={{ scale: 0.98 }}
+      onClick={() => onSelect(label)}
+      aria-current={isActive ? 'page' : undefined}
+      className={`relative flex items-center gap-3.5 px-6 py-3 text-sm font-light transition w-full text-left
+        ${isActive
+          ? 'text-white bg-accent/[0.06]'
+          : 'text-mistDim hover:text-mist hover:bg-white/[0.02]'}`}
+    >
+      {isActive && (
+        <span
+          className="absolute left-0 top-0 bottom-0 w-px bg-accent"
+          style={{ boxShadow: '0 0 12px #4da6ff' }}
+        />
+      )}
+      <Icon size={15} className={isActive ? 'text-accent' : ''} />
+      {label}
+    </motion.button>
+  )
+}
 
-export default function Dashboard() {
-  const [active, setActive] = useState('Dashboard')
-  const navigate = useNavigate()
-  const [summary, setSummary] = useState(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const token = localStorage.getItem('token')
-    if (!token) {
-      navigate('/login')
-      return
-    }
-    getSummary()
-      .then(data => setSummary(data))
-      .catch(() => navigate('/login'))
-      .finally(() => setLoading(false))
-  }, [])
-
-  const handleLogout = () => {
-    localStorage.removeItem('token')
-    navigate('/')
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
-        <div className="text-gray-400 text-sm">Loading your dashboard...</div>
-      </div>
-    )
-  }
-
-  const Sidebar = () => (
-    <aside className="w-60 flex flex-col py-6 px-3 border-r border-white/5 sidebar-glow fixed h-full">
-      <div className="flex items-center gap-2 px-3 mb-8">
-        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-          <BrainCircuit size={14} className="text-white" />
+// Declared at module scope on purpose. Defining this inside Dashboard gave it a
+// fresh component identity on every render, so React tore down and rebuilt the
+// whole sidebar each time — which also wedged the AnimatePresence swap in main.
+function Sidebar({ active, onSelect, user, onLogout, open, onClose, pinned }) {
+  return (
+    <aside
+      // Off-canvas drawer below lg; a permanent column from lg up. Kept mounted
+      // so nav state survives opening and closing on mobile.
+      className="w-60 flex flex-col py-7 border-r border-line fixed left-0 top-0 h-full bg-ink z-40"
+      style={{
+        transform: (open || pinned) ? 'translateX(0)' : 'translateX(-100%)',
+        transition: 'transform .3s cubic-bezier(.4,0,.2,1)',
+      }}
+    >
+      <button
+        onClick={onClose}
+        aria-label="Close navigation"
+        className="lg:hidden absolute top-6 right-4 text-mistDim hover:text-white transition p-1"
+      >
+        <X size={16} />
+      </button>
+      <div className="flex items-center gap-3 px-6 mb-10">
+        <div className="w-8 h-8 border border-line2 flex items-center justify-center">
+          <BrainCircuit size={14} className="text-accent" />
         </div>
-        <span className="font-semibold text-white text-sm">CareerAI</span>
+        <span className="text-xs tracking-[0.28em] uppercase text-white/90">CareerAI</span>
       </div>
 
-      <div className="flex flex-col gap-0.5 flex-1">
-        <p className="text-xs text-gray-600 uppercase tracking-wider px-3 mb-2">Main</p>
-        {navItems.slice(0, 5).map(({ icon: Icon, label }) => (
-          <button
-            key={label}
-            onClick={() => setActive(label)}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition w-full text-left group
-              ${active === label
-                ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/20'
-                : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}
-          >
-            <Icon size={16} />
-            {label}
-            {active === label && <ChevronRight size={12} className="ml-auto" />}
-          </button>
+      <div className="flex flex-col flex-1">
+        <p className="label px-6 mb-3">Main</p>
+        {navItems.slice(0, 5).map(item => (
+          <NavButton key={item.label} {...item} active={active} onSelect={onSelect} />
         ))}
 
-        <p className="text-xs text-gray-600 uppercase tracking-wider px-3 mt-4 mb-2">Tools</p>
-        {navItems.slice(5).map(({ icon: Icon, label }) => (
-          <button
-            key={label}
-            onClick={() => setActive(label)}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition w-full text-left
-              ${active === label
-                ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/20'
-                : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}
-          >
-            <Icon size={16} />
-            {label}
-          </button>
+        <p className="label px-6 mt-8 mb-3">Tools</p>
+        {navItems.slice(5).map(item => (
+          <NavButton key={item.label} {...item} active={active} onSelect={onSelect} />
         ))}
       </div>
 
-      <div className="border-t border-white/5 pt-4 mt-4">
-        <div className="flex items-center gap-3 px-3 mb-3">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-xs font-semibold">
-            {summary?.user?.full_name?.charAt(0) || 'U'}
+      <div className="border-t border-line pt-5 mt-5">
+        <div className="flex items-center gap-3 px-6 mb-4">
+          <div className="w-9 h-9 border border-line2 overflow-hidden flex-shrink-0 flex items-center justify-center text-xs text-accent">
+            {avatarSrc(user?.avatar_url) ? (
+              <img src={avatarSrc(user.avatar_url)} alt="" className="w-full h-full object-cover" />
+            ) : (
+              user?.full_name?.charAt(0) || 'U'
+            )}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-white truncate">{summary?.user?.full_name}</div>
-            <div className="text-xs text-gray-600 truncate">{summary?.user?.email}</div>
+            <div className="text-sm font-light text-white truncate">{user?.full_name}</div>
+            <div className="text-[11px] text-mistDim truncate">{user?.email}</div>
           </div>
         </div>
         <button
-          onClick={handleLogout}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-600 hover:text-red-400 hover:bg-red-500/5 transition w-full text-left"
+          onClick={onLogout}
+          className="flex items-center gap-3.5 px-6 py-3 text-sm font-light text-mistDim hover:text-red-400 transition w-full text-left"
         >
           <LogOut size={15} />
           Logout
@@ -124,141 +108,101 @@ export default function Dashboard() {
       </div>
     </aside>
   )
+}
+
+export default function Dashboard() {
+  const location = useLocation()
+  // Active section comes from the URL, so refresh, back/forward and deep links
+  // all behave correctly. Longest-prefix match keeps /dashboard from matching
+  // every child route.
+  const active = useMemo(() => {
+    const match = Object.entries(PATH_FOR)
+      .filter(([, path]) => location.pathname === path || location.pathname.startsWith(path + '/'))
+      .sort((a, b) => b[1].length - a[1].length)[0]
+    return match ? match[0] : 'Dashboard'
+  }, [location.pathname])
+  const navigate = useNavigate()
+  const [user, setUser] = useState(null)
+  const [navOpen, setNavOpen] = useState(false)
+  // The sidebar is a permanent column from lg up and a drawer below it.
+  const [isDesktop, setIsDesktop] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches
+  )
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const onChange = (e) => {
+      setIsDesktop(e.matches)
+      if (e.matches) setNavOpen(false)
+    }
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+
+  useEffect(() => {
+    // The layout guards the route and loads only what the sidebar shows.
+    // Each section fetches its own data, so switching sections no longer
+    // re-requests the dashboard payload.
+    if (!localStorage.getItem('token')) {
+      navigate('/login')
+      return
+    }
+    let cancelled = false
+    getMe()
+      .then(u => { if (!cancelled) setUser(u) })
+      .catch(() => { if (!cancelled) navigate('/login') })
+    return () => { cancelled = true }
+  }, [navigate])
+
+  const handleLogout = () => {
+    localStorage.removeItem('token')
+    navigate('/')
+  }
+
+  const selectSection = (label) => {
+    navigate(PATH_FOR[label] || '/dashboard')
+    setNavOpen(false)
+  }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white flex">
-      <Sidebar />
+    <div className="min-h-screen bg-ink text-white flex">
+      {/* Mobile top bar — the only way to reach navigation below lg */}
+      <div className="lg:hidden fixed top-0 left-0 right-0 z-30 h-14 border-b border-line bg-ink/95 backdrop-blur flex items-center gap-3 px-4">
+        <button
+          onClick={() => setNavOpen(true)}
+          aria-label="Open navigation"
+          aria-expanded={navOpen}
+          className="w-9 h-9 border border-line2 flex items-center justify-center text-accent"
+        >
+          <Menu size={15} />
+        </button>
+        <span className="text-xs tracking-[0.28em] uppercase text-white/90">CareerAI</span>
+        <span className="label ml-auto truncate max-w-[45%]">{active}</span>
+      </div>
 
-      <main className="flex-1 ml-60 min-h-screen">
-        {active === 'Resumes' ? (
-  <Resumes />
-) : active === 'Skill Gap' ? (
-  <SkillGap />
-) : active === 'Interview' ? (
-  <Interview />
-) : active === 'GitHub' ? (
-  <GitHub />
-) : (
-          <div className="p-8">
-            <div className="flex items-center justify-between mb-8">
-              <div>
-                <h1 className="text-2xl font-bold text-white">Good morning, {summary?.user?.full_name?.split(' ')[0]} 👋</h1>
-                <p className="text-gray-600 text-sm mt-0.5">Here's what's happening with your career today.</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <button className="w-9 h-9 glass rounded-xl flex items-center justify-center text-gray-500 hover:text-white transition">
-                  <Bell size={16} />
-                </button>
-                <button
-                  onClick={() => setActive('Resumes')}
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-xl transition flex items-center gap-2"
-                >
-                  <Upload size={14} /> Upload resume
-                </button>
-              </div>
-            </div>
+      {/* Scrim closes the drawer on tap. Always rendered rather than mounted
+          conditionally: a sibling appearing before <Sidebar/> shifts its
+          position in the tree, which makes React remount the whole aside and
+          lose its transition. Visibility is toggled instead. */}
+      <div
+        onClick={() => setNavOpen(false)}
+        className={`lg:hidden fixed inset-0 bg-ink/80 z-30 transition-opacity duration-300
+          ${navOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        aria-hidden="true"
+      />
 
-            <div className="grid grid-cols-4 gap-4 mb-6">
-              {[
-                { label: 'ATS Score', value: summary?.resumes?.avg_ats_score || 0, change: '+13', icon: TrendingUp, color: 'text-green-400', bg: 'bg-green-500/10' },
-                { label: 'Resumes', value: summary?.resumes?.count || 0, change: 'uploaded', icon: FileText, color: 'text-indigo-400', bg: 'bg-indigo-500/10' },
-                { label: 'Interviews', value: summary?.interviews?.total_sessions || 0, change: 'sessions', icon: MessageSquare, color: 'text-purple-400', bg: 'bg-purple-500/10' },
-                { label: 'Match score', value: `${summary?.skill_gaps?.avg_match_score || 0}%`, change: 'avg gap score', icon: Zap, color: 'text-yellow-400', bg: 'bg-yellow-500/10' },
-              ].map(({ label, value, change, icon: Icon, color, bg }) => (
-                <div key={label} className="glass rounded-2xl p-5 card-hover">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs text-gray-600 uppercase tracking-wider">{label}</span>
-                    <div className={`w-8 h-8 ${bg} rounded-lg flex items-center justify-center`}>
-                      <Icon size={14} className={color} />
-                    </div>
-                  </div>
-                  <div className="text-3xl font-bold text-white mb-1">{value}</div>
-                  <div className="text-xs text-green-400">{change}</div>
-                </div>
-              ))}
-            </div>
+      <Sidebar
+        active={active}
+        onSelect={selectSection}
+        user={user}
+        onLogout={handleLogout}
+        open={navOpen}
+        pinned={isDesktop}
+        onClose={() => setNavOpen(false)}
+      />
 
-            <div className="grid grid-cols-3 gap-4">
-              <div className="col-span-2 glass rounded-2xl p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <div>
-                    <h2 className="text-sm font-semibold text-white">ATS Score Progress</h2>
-                    <p className="text-xs text-gray-600 mt-0.5">Last 6 weeks</p>
-                  </div>
-                </div>
-                <ResponsiveContainer width="100%" height={180}>
-                  <AreaChart data={chartData}>
-                    <defs>
-                      <linearGradient id="scoreGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <XAxis dataKey="week" tick={{ fill: '#4b5563', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: '#4b5563', fontSize: 11 }} axisLine={false} tickLine={false} domain={[30, 100]} />
-                    <Tooltip contentStyle={{ background: '#13131a', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', color: '#fff', fontSize: 12 }} />
-                    <Area type="monotone" dataKey="score" stroke="#6366f1" strokeWidth={2} fill="url(#scoreGrad)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div className="glass rounded-2xl p-6">
-                <h2 className="text-sm font-semibold text-white mb-4">Recent activity</h2>
-                <div className="flex flex-col gap-4">
-                  {summary?.resumes?.recent?.map((r) => (
-                    <div key={r.id} className="flex gap-3">
-                      <div className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center flex-shrink-0 mt-0.5">
-                        <FileText size={13} className="text-indigo-400" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-300 leading-relaxed">{r.file_name} uploaded</p>
-                        <p className="text-xs text-gray-600 mt-0.5">ATS: {r.ats_score}</p>
-                      </div>
-                    </div>
-                  ))}
-                  {summary?.interviews?.recent?.map((s) => (
-                    <div key={s.id} className="flex gap-3">
-                      <div className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center flex-shrink-0 mt-0.5">
-                        <MessageSquare size={13} className="text-purple-400" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-300 leading-relaxed">{s.job_role} interview</p>
-                        <p className="text-xs text-gray-600 mt-0.5">Score: {s.total_score} · {s.status}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="col-span-3 glass rounded-2xl p-6">
-                <div className="flex items-center justify-between mb-5">
-                  <div>
-                    <h2 className="text-sm font-semibold text-white">Top missing skills</h2>
-                    <p className="text-xs text-gray-600 mt-0.5">Based on your skill gap analyses</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  {summary?.skill_gaps?.top_missing_skills?.length > 0
-                    ? summary.skill_gaps.top_missing_skills.map(({ skill, count }) => (
-                      <div key={skill} className="flex items-center gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className="text-sm text-gray-300 font-medium capitalize">{skill}</span>
-                            <span className="text-xs text-gray-600">{count}x missing</span>
-                          </div>
-                          <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-                            <div className="h-full bg-gradient-to-r from-red-500 to-rose-500 rounded-full" style={{ width: `${Math.min(count * 20, 100)}%` }} />
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                    : <p className="text-gray-600 text-sm col-span-2">No skill gap analyses yet. Upload a resume and analyze it!</p>
-                  }
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+      <main className="flex-1 min-w-0 lg:ml-60 min-h-screen pt-14 lg:pt-0">
+        <Outlet />
       </main>
     </div>
   )
