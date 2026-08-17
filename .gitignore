@@ -1,7 +1,9 @@
 # Environment / secrets
 .env
 .env.*
+# Templates carry no secrets and must be committed.
 !.env.example
+!.env.*.example
 
 # Python
 venv/
@@ -14,6 +16,10 @@ dist/
 
 # Uploaded user content
 backend/uploads/
+
+# Local run artefacts
+*.log
+verify_token.txt
 
 # OS / editor
 .DS_Store

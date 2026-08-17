@@ -1,0 +1,14 @@
+# Build context hygiene — keeps images small and secrets out of layers.
+**/.git
+**/.env
+**/.env.*
+!**/.env.example
+**/venv
+**/node_modules
+**/dist
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/uploads
+**/*.log
+.claude
