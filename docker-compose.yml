@@ -1,0 +1,63 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-career}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-career_coach}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # The backend runs migrations on start, so it must not start until
+      # Postgres is genuinely accepting connections.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-career} -d ${POSTGRES_DB:-career_coach}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-career}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-career_coach}
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      GROQ_API_KEY: ${GROQ_API_KEY:?set GROQ_API_KEY in .env}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_CACHE_MINUTES: ${GITHUB_CACHE_MINUTES:-60}
+      # nginx proxies /api from the frontend's own origin, so no browser
+      # request is cross-origin. Kept configurable for direct API access.
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      # Pay the embedding-model load at boot so no user request eats it.
+      WARM_UP_MODELS: ${WARM_UP_MODELS:-1}
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/ >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      # Generous: the container loads the embedding model before serving.
+      start_period: 90s
+      retries: 5
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  uploads:

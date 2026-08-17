@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, DateTime, Text, ForeignKey, JSON
+from sqlalchemy import Column, String, Float, DateTime, Text, ForeignKey, JSON, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from datetime import datetime
 import uuid
@@ -14,5 +14,9 @@ class SkillGap(Base):
     job_description = Column(Text, nullable=False)
     matched_skills = Column(JSON, default=[])
     missing_skills = Column(JSON, default=[])
+    # Per-skill [{skill, status: MATCHED|PARTIAL|MISSING, similarity}].
+    # Null for analyses run before classification existed.
+    skill_details = Column(JSON, nullable=True)
     match_score = Column(Float, default=0.0)
+    used_role_fallback = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)

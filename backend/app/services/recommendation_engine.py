@@ -1,24 +1,58 @@
-from groq import Groq
-import json
-import os
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field
+
+from app.services.llm import complete_json
 
 load_dotenv()
 
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-def get_recommendations(missing_skills: list[str], target_role: str) -> dict:
-    if not missing_skills:
-        return {
-            "courses": [],
-            "projects": [],
-            "books": [],
-            "roadmap": []
-        }
+class Course(BaseModel):
+    title: str
+    platform: str = ""
+    skill: str = ""
+    duration: str = ""
+    level: str = ""
+    url: str = ""
 
-    skills_str = ", ".join(missing_skills)
 
-    prompt = f"""You are an expert career coach and technical mentor.
+class Project(BaseModel):
+    title: str
+    description: str = ""
+    skills_covered: list[str] = Field(default_factory=list)
+    difficulty: str = ""
+    estimated_time: str = ""
+
+
+class Book(BaseModel):
+    title: str
+    author: str = ""
+    skill: str = ""
+    why: str = ""
+
+
+class RoadmapWeek(BaseModel):
+    week: int = 1
+    focus: str = ""
+    goal: str = ""
+    tasks: list[str] = Field(default_factory=list)
+    resources: list[str] = Field(default_factory=list)
+
+
+class RecommendationBundle(BaseModel):
+    """Validated shape of a generated roadmap.
+
+    Only `title` is genuinely required on each item — everything else defaults
+    to empty so a slightly sparse but structurally valid response is still
+    usable, while a malformed one is rejected.
+    """
+    courses: list[Course] = Field(default_factory=list)
+    projects: list[Project] = Field(default_factory=list)
+    books: list[Book] = Field(default_factory=list)
+    roadmap: list[RoadmapWeek] = Field(default_factory=list)
+
+
+def recommendations_prompt(skills_str: str, target_role: str) -> str:
+    return f"""You are an expert career coach and technical mentor.
 
 A candidate wants to become a {target_role} but is missing these skills: {skills_str}
 
@@ -57,37 +91,32 @@ Generate personalized recommendations in the following JSON format only, no extr
       "week": 1,
       "focus": "skill to focus on",
       "goal": "what to achieve this week",
+      "tasks": ["specific actionable task", "another specific task"],
       "resources": ["resource1", "resource2"]
     }}
   ]
 }}
 
 Generate 3 courses, 3 projects, 2 books, and a 6 week roadmap.
+Each roadmap week must include 3-5 concrete tasks the candidate can tick off.
+Tasks must be specific and verifiable ("Build a REST API with FastAPI"), not
+vague ("learn backend").
 Return ONLY the JSON, no markdown, no explanation."""
 
-    chat_completion = client.chat.completions.create(
-        messages=[
-            {"role": "user", "content": prompt}
-        ],
-        model="llama-3.3-70b-versatile",
+
+def get_recommendations(missing_skills: list[str], target_role: str) -> dict:
+    """Generate a learning plan.
+
+    Raises LLMError if the model can't return a valid bundle, rather than
+    silently handing back empty lists that look like "nothing to learn".
+    """
+    if not missing_skills:
+        return {"courses": [], "projects": [], "books": [], "roadmap": []}
+
+    bundle = complete_json(
+        recommendations_prompt(", ".join(missing_skills), target_role),
+        RecommendationBundle,
         temperature=0.7,
         max_tokens=2000,
     )
-
-    response_text = chat_completion.choices[0].message.content.strip()
-
-    try:
-        if "```json" in response_text:
-            response_text = response_text.split("```json")[1].split("```")[0].strip()
-        elif "```" in response_text:
-            response_text = response_text.split("```")[1].split("```")[0].strip()
-
-        result = json.loads(response_text)
-        return result
-    except json.JSONDecodeError:
-        return {
-            "courses": [],
-            "projects": [],
-            "books": [],
-            "roadmap": []
-        }
+    return bundle.model_dump()

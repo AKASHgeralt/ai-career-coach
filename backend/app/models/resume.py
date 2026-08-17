@@ -13,4 +13,7 @@ class Resume(Base):
     file_path = Column(String, nullable=False)
     parsed_text = Column(Text, nullable=True)
     ats_score = Column(Integer, default=0)
+    # Per-user sequential version number (v1, v2, v3…), assigned at upload so
+    # progress between drafts can be tracked and compared.
+    version = Column(Integer, nullable=False, default=1)
     uploaded_at = Column(DateTime, default=datetime.utcnow)

@@ -1,7 +1,9 @@
 # Environment / secrets
 .env
 .env.*
+# Templates carry no secrets and must be committed.
 !.env.example
+!.env.*.example
 
 # Python
 venv/
@@ -15,8 +17,15 @@ dist/
 # Uploaded user content
 backend/uploads/
 
+# Local run artefacts
+*.log
+verify_token.txt
+
 # OS / editor
 .DS_Store
 .vscode/*
 !.vscode/extensions.json
 .idea/
+
+# Stray npm lockfile in a Python-only directory
+backend/package-lock.json

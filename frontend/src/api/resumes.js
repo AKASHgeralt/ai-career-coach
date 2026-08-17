@@ -23,3 +23,12 @@ export const deleteResume = async (resumeId) => {
   const res = await API.delete(`/api/resumes/${resumeId}`)
   return res.data
 }
+export const getVersionHistory = async () => {
+  const res = await API.get('/api/resumes/versions')
+  return res.data
+}
+
+export const compareVersions = async (base, target) => {
+  const res = await API.get('/api/resumes/compare', { params: { base, target } })
+  return res.data
+}

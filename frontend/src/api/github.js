@@ -1,8 +1,9 @@
 import API from './client'
 
-export const connectGithub = async (username) => {
+export const connectGithub = async (username, force = false) => {
   const res = await API.post('/api/github/connect', {
-    github_username: username
+    github_username: username,
+    force,
   })
   return res.data
 }

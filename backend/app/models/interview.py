@@ -14,6 +14,10 @@ class InterviewSession(Base):
     total_score = Column(Integer, default=0)
     questions_asked = Column(Integer, default=0)
     status = Column(String, default="active")
+    # The question the candidate is currently looking at and has not answered yet.
+    # Persisted so the answer is graded against the question actually shown to
+    # them, rather than one regenerated server-side. Null once the session ends.
+    current_question = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class InterviewAnswer(Base):
@@ -25,4 +29,9 @@ class InterviewAnswer(Base):
     answer = Column(Text, nullable=False)
     score = Column(Integer, default=0)
     ai_feedback = Column(Text, nullable=True)
+    # Per-dimension 0-10 scores, e.g. {"technical": 8, "problem_solving": 7,
+    # "communication": 6}. Null for answers graded before dimensions existed.
+    dimensions = Column(JSON, nullable=True)
+    strengths = Column(Text, nullable=True)
+    improvements = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
