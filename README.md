@@ -679,5 +679,4 @@ PARTIAL, because "you're close" is different advice from "start here".
 
 ## License
 
-Not currently licensed for redistribution. Add a `LICENSE` file before making
-the repository public.
+MIT — see [LICENSE](LICENSE).
