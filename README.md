@@ -462,7 +462,7 @@ GROQ_API_KEY=<your groq key>
 CORS_ORIGINS=http://localhost:5173      # comma-separated
 GITHUB_TOKEN=<pat>                      # raises GitHub limit 60/hr → 5000/hr
 GITHUB_CACHE_MINUTES=60                 # reuse window for GitHub data
-WARM_UP_MODELS=0                        # 1 = preload embeddings at startup
+WARM_UP_MODELS=background               # background | blocking | off
 ```
 
 `.env` is gitignored. Never commit real credentials.
@@ -603,11 +603,14 @@ npm run build
 against a scratch schema, then `alembic stamp` marked the existing database as
 current without re-running DDL or touching data.
 
-**Lazy model loading.** `sentence-transformers` pulls in torch and transformers,
-costing ~23 seconds at import. Both the import and model construction are
+**Lazy model loading, warmed in the background.** `sentence-transformers` pulls
+in torch and transformers, costing ~23 seconds at import. Both the import and model construction are
 deferred to first use behind a double-checked lock, cutting startup from 23.4s
 to 1.6s. spaCy was removed entirely — it was loaded at import but its pipeline
-was never called. Set `WARM_UP_MODELS=1` to pay the cost at boot instead.
+was never called. By default the model is then warmed on a background thread at startup: the API
+serves immediately and the model loads alongside it, so the first skill-gap
+request drops from ~34s to under a second. `WARM_UP_MODELS=blocking` finishes
+loading before serving; `off` reverts to purely lazy.
 
 **Parse before write.** Uploaded PDFs are validated and parsed in memory, and
 only written to disk once known good. Rejected uploads leave no files behind.

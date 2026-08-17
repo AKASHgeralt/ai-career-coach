@@ -14,6 +14,9 @@ export default function SkillGap() {
   const [result, setResult] = useState(null)
   const [pastGaps, setPastGaps] = useState([])
   const [error, setError] = useState('')
+  // A cold backend loads the matching model on first use. Surfacing that after
+  // a few seconds stops a legitimate 30s wait from reading as a hung request.
+  const [slow, setSlow] = useState(false)
 
   useEffect(() => {
     getResumes().then(setResumes)
@@ -33,6 +36,7 @@ export default function SkillGap() {
     setLoading(true)
     setError('')
     setResult(null)
+    const slowTimer = setTimeout(() => setSlow(true), 4000)
     try {
       const data = await analyzeSkillGap(selectedResume, jobTitle, jobDescription)
       setResult(data)
@@ -41,6 +45,8 @@ export default function SkillGap() {
     } catch {
       setError('Analysis failed. Please try again.')
     } finally {
+      clearTimeout(slowTimer)
+      setSlow(false)
       setLoading(false)
     }
   }
@@ -119,6 +125,14 @@ export default function SkillGap() {
             ? <><Loader size={13} className="animate-spin" /> Analyzing…</>
             : <><Target size={13} /> Analyze skill gap</>}
         </motion.button>
+
+        {slow && (
+          <p className="text-[11px] text-mistDim font-light mt-4 leading-relaxed">
+            Still working — the first analysis after a server restart loads the
+            semantic matching model, which can take up to 30 seconds. Later
+            analyses take under a second.
+          </p>
+        )}
       </div>
 
       {/* Result */}

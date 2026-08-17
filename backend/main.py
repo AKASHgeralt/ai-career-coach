@@ -11,7 +11,9 @@ from app.services.llm import LLMError
 
 import logging
 import os
+import threading
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Schema is owned by Alembic — run `alembic upgrade head` before starting.
@@ -21,12 +23,43 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # The embedding model loads lazily by default, which keeps dev restarts
-    # quick. Set WARM_UP_MODELS=1 (e.g. in production) to pay that cost during
-    # boot instead of on whichever request happens to need it first.
-    if os.getenv("WARM_UP_MODELS", "").lower() in ("1", "true", "yes"):
+    """Warm the embedding model without delaying startup.
+
+    The model takes ~30s to load. Loading it lazily meant the first skill-gap
+    request paid that cost, which reads as a hung request. Loading it
+    synchronously here would instead make the server unavailable for 30s.
+
+    Default is a background thread: the API serves immediately and the model
+    loads alongside, so by the time a user logs in and navigates to skill gap
+    it is normally ready. get_model() is guarded by a double-checked lock, so a
+    request arriving mid-load simply waits for the same instance.
+
+      WARM_UP_MODELS=background  (default) load concurrently with startup
+      WARM_UP_MODELS=1|blocking            finish loading before serving
+      WARM_UP_MODELS=0|off                 don't warm; first request pays
+    """
+    mode = os.getenv("WARM_UP_MODELS", "background").strip().lower()
+
+    if mode in ("0", "false", "no", "off"):
+        logger.info("Model warm-up disabled; first skill-gap request will load it")
+    elif mode in ("1", "true", "yes", "blocking"):
         from app.services.skill_gap_engine import warm_up
+        logger.info("Loading embedding model before serving…")
         warm_up()
+    else:
+        from app.services.skill_gap_engine import warm_up
+
+        def _warm():
+            try:
+                warm_up()
+                logger.info("Embedding model ready")
+            except Exception:
+                # A failed warm-up must not take the server down; the next
+                # request retries the load and surfaces any real error.
+                logger.warning("Background model warm-up failed", exc_info=True)
+
+        threading.Thread(target=_warm, name="model-warmup", daemon=True).start()
+
     yield
 
 
