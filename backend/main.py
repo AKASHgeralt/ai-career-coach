@@ -1,19 +1,67 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from database import engine, Base
+from fastapi.staticfiles import StaticFiles
+from contextlib import asynccontextmanager
+
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
 from app.routers import auth, users, resumes, skills, recommendations, interview, github, analytics
+from app.services.llm import LLMError
 
-Base.metadata.create_all(bind=engine)
+import logging
+import os
 
-app = FastAPI(title="AI Career Coach API", version="1.0.0")
+logger = logging.getLogger(__name__)
+
+# Schema is owned by Alembic — run `alembic upgrade head` before starting.
+# create_all() was removed because it silently no-ops on column changes to
+# existing tables, which hid schema drift.
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # The embedding model loads lazily by default, which keeps dev restarts
+    # quick. Set WARM_UP_MODELS=1 (e.g. in production) to pay that cost during
+    # boot instead of on whichever request happens to need it first.
+    if os.getenv("WARM_UP_MODELS", "").lower() in ("1", "true", "yes"):
+        from app.services.skill_gap_engine import warm_up
+        warm_up()
+    yield
+
+
+app = FastAPI(title="AI Career Coach API", version="1.0.0", lifespan=lifespan)
+
+# Origins come from CORS_ORIGINS (comma-separated) so deployments don't need a
+# code change. Defaults to the local Vite dev server.
+DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", DEFAULT_CORS_ORIGINS).split(",")
+    if origin.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5180"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+os.makedirs("uploads/avatars", exist_ok=True)
+app.mount("/uploads/avatars", StaticFiles(directory="uploads/avatars"), name="avatars")
+
+@app.exception_handler(LLMError)
+async def llm_error_handler(request: Request, exc: LLMError):
+    """Surface AI failures as a retryable 503 carrying a user-safe message.
+
+    Without this an unusable model response becomes an opaque 500, and the
+    client can't tell "try again" from "something is broken".
+    """
+    logger.warning("LLM failure on %s: %s", request.url.path, exc)
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
+
 
 app.include_router(auth.router)
 app.include_router(users.router)
