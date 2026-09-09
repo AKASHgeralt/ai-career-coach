@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response
 from sqlalchemy.orm import Session
 from jose import JWTError
 from fastapi.security import OAuth2PasswordBearer
@@ -9,16 +9,17 @@ from app.services.auth import decode_token
 from app.services.roles import TARGET_ROLES
 
 from datetime import datetime
-import os
+import hashlib
 import uuid
+from uuid import UUID
 
 router = APIRouter(prefix="/api/users", tags=["Users"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
-AVATAR_DIR = "uploads/avatars"
-os.makedirs(AVATAR_DIR, exist_ok=True)
-
 MAX_AVATAR_SIZE = 3 * 1024 * 1024  # 3MB
+
+AVATAR_MIME = {"png": "image/png", "jpg": "image/jpeg",
+               "gif": "image/gif", "webp": "image/webp"}
 
 # Detected from file content, not the client-supplied filename/content-type,
 # so a renamed non-image file can't slip through.
@@ -81,19 +82,14 @@ def upload_avatar(
     if not ext:
         raise HTTPException(status_code=400, detail="File must be a PNG, JPEG, GIF or WEBP image")
 
-    old_avatar_path = current_user.avatar_url.lstrip("/") if current_user.avatar_url else None
-
-    file_name = f"{uuid.uuid4()}.{ext}"
-    file_path = os.path.join(AVATAR_DIR, file_name)
-    with open(file_path, "wb") as f:
-        f.write(content)
-
-    current_user.avatar_url = f"/{AVATAR_DIR}/{file_name}"
+    current_user.avatar_data = content
+    current_user.avatar_mime = AVATAR_MIME[ext]
+    # The digest makes the URL change whenever the image does, so a cached copy
+    # of the previous avatar is never shown after an upload.
+    tag = hashlib.sha256(content).hexdigest()[:16]
+    current_user.avatar_url = f"/api/users/{current_user.id}/avatar?v={tag}"
     db.commit()
     db.refresh(current_user)
-
-    if old_avatar_path and os.path.exists(old_avatar_path):
-        os.remove(old_avatar_path)
 
     return current_user
 
@@ -103,10 +99,28 @@ def remove_avatar(
     current_user: User = Depends(get_current_user)
 ):
     if current_user.avatar_url:
-        old_avatar_path = current_user.avatar_url.lstrip("/")
-        if os.path.exists(old_avatar_path):
-            os.remove(old_avatar_path)
         current_user.avatar_url = None
+        current_user.avatar_data = None
+        current_user.avatar_mime = None
         db.commit()
         db.refresh(current_user)
     return current_user
+
+@router.get("/{user_id}/avatar")
+def get_avatar(user_id: UUID, db: Session = Depends(get_db)):
+    """Serve avatar bytes for an <img> tag.
+
+    Deliberately unauthenticated: a browser image request cannot carry the bearer
+    token, and this replaces a StaticFiles mount that was equally open. The route
+    exposes nothing but the picture, and only to someone who already has the
+    account's UUID, which is never shown to other users.
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user or not user.avatar_data:
+        raise HTTPException(status_code=404, detail="No avatar set")
+    return Response(
+        content=user.avatar_data,
+        media_type=user.avatar_mime or "application/octet-stream",
+        # The URL carries a content digest, so a cached copy can never be stale.
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )

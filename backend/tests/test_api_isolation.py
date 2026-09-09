@@ -98,27 +98,26 @@ class TestSkillGapIsolation:
 
 class TestInterviewIsolation:
     def _session(self, client, headers, monkeypatch=None):
-        from app.services import interview_engine
         return client.post("/api/interview/start", headers=headers,
                            json={"job_role": "Backend Developer", "difficulty": "easy"})
 
     def test_cannot_list_another_users_sessions(self, client, auth, other_auth, monkeypatch):
-        from app.services import interview_engine
-        monkeypatch.setattr(interview_engine, "generate_question", lambda *a, **k: "Q?")
+        from app.routers import interview as interview_router
+        monkeypatch.setattr(interview_router, "generate_question", lambda *a, **k: "Q?")
         self._session(client, other_auth)
         assert client.get("/api/interview/sessions", headers=auth).json() == []
 
     def test_cannot_read_another_users_answers(self, client, auth, other_auth, monkeypatch):
-        from app.services import interview_engine
-        monkeypatch.setattr(interview_engine, "generate_question", lambda *a, **k: "Q?")
+        from app.routers import interview as interview_router
+        monkeypatch.setattr(interview_router, "generate_question", lambda *a, **k: "Q?")
         theirs = self._session(client, other_auth).json()
         sid = theirs["session_id"]
         assert client.get(f"/api/interview/sessions/{sid}/answers", headers=auth).status_code == 404
         assert client.get(f"/api/interview/sessions/{sid}/analytics", headers=auth).status_code == 404
 
     def test_cannot_answer_another_users_session(self, client, auth, other_auth, monkeypatch):
-        from app.services import interview_engine
-        monkeypatch.setattr(interview_engine, "generate_question", lambda *a, **k: "Q?")
+        from app.routers import interview as interview_router
+        monkeypatch.setattr(interview_router, "generate_question", lambda *a, **k: "Q?")
         theirs = self._session(client, other_auth).json()
         r = client.post("/api/interview/answer", headers=auth,
                         json={"session_id": theirs["session_id"], "answer": "hello"})

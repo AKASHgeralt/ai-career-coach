@@ -1,0 +1,4 @@
+# Single-page app fallback for Cloudflare Pages and Netlify. Client-side routes
+# like /dashboard/interview are not files, so a hard refresh would 404 without
+# this. Vercel uses vercel.json instead.
+/*  /index.html  200

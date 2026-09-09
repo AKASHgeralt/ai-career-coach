@@ -22,6 +22,7 @@ the **Career Readiness Score** — and one recommendation: your **next best acti
 - [Project structure](#project-structure)
 - [Installation](#installation)
 - [Environment variables](#environment-variables)
+- [Deployment](#deployment)
 - [Running locally](#running-locally)
 - [Example workflow](#example-workflow)
 - [Testing](#testing)
@@ -97,7 +98,7 @@ error rather than substituting a plausible-looking default.
 | **Target role** | Seven supported roles drive skill baselines, roadmaps, interview questions and scoring. Adding a role is a one-line change. |
 | **Resume analysis** | PDF text extraction, skill detection, and a deterministic ATS score broken down into six explainable categories with specific improvement suggestions. |
 | **Resume versioning** | Each upload is a numbered version. Compare any two to see skills gained, skills dropped, what your target role still requires, and how each ATS category moved. |
-| **Skill gap engine** | Exact matching plus semantic similarity via sentence embeddings and FAISS. Classifies each required skill as MATCHED / PARTIAL / MISSING with a similarity score. |
+| **Skill gap engine** | Exact matching plus a precomputed similarity table. Classifies each required skill as MATCHED / PARTIAL / MISSING with a similarity score. |
 | **Career readiness score** | 0–100, weighted across four signals, with graceful handling of missing data and a written explanation. |
 | **Next best action** | Deterministic engine that names the single highest-value next step and justifies it with your own numbers. |
 | **Learning roadmap** | LLM-generated week-by-week plan with courses, projects and books — materialised into checkable tasks with persisted progress. |
@@ -125,10 +126,9 @@ error rather than substituting a plausible-looking default.
          │   6 categories)    │   └───────────┬───────────┘
          └─────────┬──────────┘               ↓
                    │              ┌────────────────────────┐
-                   │              │  Semantic matching     │
-                   │              │  all-MiniLM-L6-v2      │
-                   │              │  → FAISS IndexFlatIP   │
-                   │              │  cosine ≥ 0.75 MATCHED │
+                   │              │  Similarity lookup     │
+                   │              │  precomputed table     │
+                   │              │  score ≥ 0.75 MATCHED  │
                    │              │        ≥ 0.50 PARTIAL  │
                    │              └────────────┬───────────┘
                    │                           ↓
@@ -138,7 +138,7 @@ error rather than substituting a plausible-looking default.
                    │                          ↓
                    │              ┌───────────────────────┐
                    │              │  Roadmap generation   │
-                   │              │  Groq / Llama 3.3 70B │
+                   │              │  Groq / gpt-oss-120b  │
                    │              │  Pydantic-validated   │
                    │              └───────────┬───────────┘
                    │                          ↓
@@ -166,9 +166,15 @@ where open-ended generation is genuinely required: writing roadmaps, asking
 interview questions and grading free-text answers.
 
 **Two-stage skill matching.** Exact set intersection first — unambiguous and
-free. Only unresolved skills go through the embedding model, which is where the
-cost is. Similarity thresholds turn a binary match into three actionable
-categories.
+free. Only unresolved skills fall through to the similarity table. Thresholds
+turn a binary match into three actionable categories.
+
+The table was generated offline from `all-MiniLM-L6-v2`. `SKILLS_DB` is a closed
+vocabulary, so every pair the model could ever be asked about was enumerated once
+and the answers baked in — 26 pairs scored above zero out of 3,081. That produces
+identical output while removing torch, faiss and sentence-transformers from the
+install, which took it from 1,331 MB to 152 MB and made free hosting viable. See
+`backend/app/services/skill_similarity.py`.
 
 **Structured LLM output.** Every LLM call that must return data is validated
 against a Pydantic model, retried once with the specific validation error fed
@@ -195,11 +201,6 @@ becomes silent application data.
                     │   8 tables        │                  │  • Groq (LLM)      │
                     │   Alembic-managed │                  │  • GitHub REST API │
                     └───────────────────┘                  └────────────────────┘
-
-                    ┌──────────────────────────────────┐
-                    │  In-process ML (lazily loaded)   │
-                    │  sentence-transformers + FAISS   │
-                    └──────────────────────────────────┘
 ```
 
 Request flow: `router` (auth, HTTP concerns) → `service` (business logic, pure
@@ -219,9 +220,8 @@ boundary in both directions.
 | Validation | Pydantic v2 |
 | Auth | passlib + bcrypt, python-jose (JWT HS256) |
 | PDF parsing | PyMuPDF |
-| Embeddings | sentence-transformers (`all-MiniLM-L6-v2`) |
-| Vector search | faiss-cpu |
-| LLM | Groq — `llama-3.3-70b-versatile` |
+| Skill similarity | precomputed lookup table (generated offline) |
+| LLM | Groq — `openai/gpt-oss-120b` (set `GROQ_MODEL`) |
 | HTTP client | httpx |
 | Testing | pytest |
 
@@ -382,7 +382,7 @@ ai-career-coach/
 │       └── services/
 │           ├── auth.py             hashing, JWT
 │           ├── nlp.py              skill extraction, ATS breakdown
-│           ├── skill_gap_engine.py embeddings, FAISS, classification
+│           ├── skill_gap_engine.py matching, similarity, classification
 │           ├── readiness.py        pure scoring maths
 │           ├── readiness_data.py   gathers signals from the DB
 │           ├── next_action.py      deterministic recommendation engine
@@ -462,10 +462,25 @@ GROQ_API_KEY=<your groq key>
 CORS_ORIGINS=http://localhost:5173      # comma-separated
 GITHUB_TOKEN=<pat>                      # raises GitHub limit 60/hr → 5000/hr
 GITHUB_CACHE_MINUTES=60                 # reuse window for GitHub data
-WARM_UP_MODELS=background               # background | blocking | off
+GROQ_MODEL=openai/gpt-oss-120b          # override if Groq withdraws the model
+GROQ_REASONING_EFFORT=low               # low | medium | high | none
 ```
 
 `.env` is gitignored. Never commit real credentials.
+
+---
+
+## Deployment
+
+The whole stack runs on free tiers with no card required — Neon for Postgres,
+Render for the API, Vercel or Cloudflare Pages for the frontend. `render.yaml`
+and `frontend/vercel.json` are committed, so most of it is a blueprint import.
+
+**[Full instructions: DEPLOYMENT.md](DEPLOYMENT.md)**
+
+This is only possible because the backend install is ~150 MB and writes nothing
+to disk; the earlier torch-based build needed 1.3 GB and a persistent volume,
+which no free tier offers.
 
 ---
 
@@ -480,15 +495,16 @@ Then open http://localhost:8080.
 
 Three services: Postgres, the FastAPI backend, and nginx serving the built
 frontend. The backend waits for a healthy database, applies migrations on
-start, and preloads the embedding model before reporting healthy — so the
-frontend only comes up once the API can actually serve requests.
+start, and reports healthy once it can serve — so the frontend only comes up
+once the API is actually answering.
 
-nginx proxies `/api` and `/uploads` to the backend from the same origin, so no
-browser request is cross-origin and CORS doesn't apply to this deployment. The
-frontend image is built with `VITE_API_URL=""` for that reason.
+nginx proxies `/api` to the backend from the same origin, so no browser request
+is cross-origin and CORS doesn't apply to this deployment. The frontend image is
+built with `VITE_API_URL=""` for that reason.
 
-Uploads and database files live on named volumes and survive `docker compose
-down`. Use `down -v` to discard them.
+Database files live on a named volume and survive `docker compose down`; use
+`down -v` to discard them. There is no uploads volume — nothing is written to
+disk at runtime.
 
 > Not yet run end to end — Docker wasn't available on the machine this was
 > written on. The compose file parses and the frontend build was verified in
@@ -551,23 +567,23 @@ Open http://localhost:5173.
 
 ```bash
 cd backend
-venv/Scripts/python.exe -m pytest -m "not slow and not integration"   # unit only, ~12s
+venv/Scripts/python.exe -m pytest -m "not integration"                # unit only, ~12s
 venv/Scripts/python.exe -m pytest -m integration                      # API tests, needs a database
 venv/Scripts/python.exe -m pytest                                     # everything, ~95s
 ```
 
 Integration tests build a throwaway PostgreSQL **schema** by running the real
 Alembic migrations, then drop it. Development data is never touched, and a
-broken migration fails the suite rather than surfacing later. Uploads are
-redirected to a temp directory via `RESUME_UPLOAD_DIR`.
+broken migration fails the suite rather than surfacing later.
 
-**213 tests**, concentrated on logic that must not silently drift:
+**227 tests**, concentrated on logic that must not silently drift:
 
 | Suite | Covers |
 |---|---|
 | `test_readiness.py` (15) | Weighted scoring, renormalisation, missing-data handling, explanations |
 | `test_github.py` (19) | Evidence-based insights, rate-limit detection, developer score |
-| `test_llm_reliability.py` (16) | JSON extraction, schema validation, retry, explicit failure |
+| `test_llm_reliability.py` (23) | JSON extraction, schema validation, retry, truncation, explicit failure |
+| `test_api_avatars.py` (11) | Image sniffing, database round-trip, cache busting, removal |
 | `test_upload_security.py` (15) | Size limits, magic bytes, filename sanitisation |
 | `test_roadmap_tasks.py` (15) | Task materialisation, malformed LLM input, progress |
 | `test_ats_breakdown.py` (15) | Category scoring, suggestions, total preservation |
@@ -582,8 +598,8 @@ redirected to a temp directory via `RESUME_UPLOAD_DIR`.
 
 The suite deliberately targets **behavioural invariants**, not line coverage.
 Examples: a missing signal must never be reported as your weakest area; an
-unparseable LLM response must raise rather than become a score of 5; exact
-skill matching must complete without loading the embedding model.
+unparseable LLM response must raise rather than become a score of 5; skill
+matching must work with torch and faiss absent from the environment entirely.
 
 Frontend:
 
@@ -603,17 +619,28 @@ npm run build
 against a scratch schema, then `alembic stamp` marked the existing database as
 current without re-running DDL or touching data.
 
-**Lazy model loading, warmed in the background.** `sentence-transformers` pulls
-in torch and transformers, costing ~23 seconds at import. Both the import and model construction are
-deferred to first use behind a double-checked lock, cutting startup from 23.4s
-to 1.6s. spaCy was removed entirely — it was loaded at import but its pipeline
-was never called. By default the model is then warmed on a background thread at startup: the API
-serves immediately and the model loads alongside it, so the first skill-gap
-request drops from ~34s to under a second. `WARM_UP_MODELS=blocking` finishes
-loading before serving; `off` reverts to purely lazy.
+**The embedding model became a lookup table.** Semantic matching accounted for
+8.1% of matches, and across all 3,081 pairs in the closed `SKILLS_DB` vocabulary
+the model scored exactly 26 above zero. Those were computed once offline and
+committed as a table, so torch, faiss, transformers and sentence-transformers
+left the install: 1,331 MB → 152 MB, import 23.4s → 1.2s, output byte-identical.
+`test_dependency_footprint.py` fails if any of them returns.
 
-**Parse before write.** Uploaded PDFs are validated and parsed in memory, and
-only written to disk once known good. Rejected uploads leave no files behind.
+**Reasoning models bill their thinking to the answer's budget.** gpt-oss emits a
+private reasoning trace before its reply, drawn from the same `max_tokens`. The
+budgets had been sized for a non-reasoning model, so roadmap generation was
+truncated mid-JSON two runs in three — and reported as *"not valid JSON"*, which
+points at the wrong thing. `complete_text` now detects `finish_reason == "length"`
+and says the limit was hit; `complete_json` doubles the budget on retry instead
+of repeating a request that cannot fit. `GROQ_REASONING_EFFORT=low` cuts the
+trace to ~10-40 tokens and roadmap latency from ~18s to ~3s, with identical
+grades (a strong answer scores 8, a weak one 2, at either setting).
+
+**Nothing is written to disk at runtime.** Uploaded PDFs are parsed in memory and
+never stored — no endpoint ever served them back, and only the extracted text is
+used. Avatars are held as bytes in the database. Both changes exist because the
+free hosting tiers restart containers on idle, which silently emptied the upload
+directory while the rows kept pointing into it.
 
 **GitHub caching.** Unauthenticated GitHub allows 60 requests/hour and each sync
 costs two. Profiles are reused within a configurable window — a cached read is
@@ -633,8 +660,7 @@ bump against credential stuffing, not edge enforcement. `X-Forwarded-For` is
 deliberately ignored, since any client can set it and rotate their own key.
 
 **Tests own their environment.** Integration tests run against a migrated
-throwaway schema rather than the development database, and write uploads to a
-temp directory. The alternative — testing against real data — makes failures
+throwaway schema rather than the development database. The alternative — testing against real data — makes failures
 depend on whatever happens to be in the database that day.
 
 **One ATS scorer everywhere.** The upload path originally used a separate

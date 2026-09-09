@@ -33,14 +33,16 @@ TARGET ROLE → RESUME → SKILL GAP → ROADMAP → INTERVIEW → GITHUB
 
 ### Stack
 - **Backend:** Python 3.11, FastAPI, SQLAlchemy 2.0, PostgreSQL, Alembic,
-  Pydantic v2, JWT (python-jose) + bcrypt, PyMuPDF, sentence-transformers
-  (`all-MiniLM-L6-v2`), faiss-cpu, Groq (`llama-3.3-70b-versatile`), httpx, pytest
+  Pydantic v2, JWT (python-jose) + bcrypt, PyMuPDF, Groq
+  (`openai/gpt-oss-120b`, via `GROQ_MODEL`), httpx, pytest.
+  No ML libraries: skill similarity is a committed lookup table.
 - **Frontend:** React 19, Vite, React Router, axios, Tailwind, Framer Motion,
   Recharts, Lucide, oxlint
-- **Infra:** Docker + compose + nginx (written, **never run** — see §7)
+- **Infra:** Docker + compose + nginx (written, **never run** — see §7);
+  free-tier deploy via Neon + Render + Vercel (`render.yaml`, `DEPLOYMENT.md`)
 
 ### Current size
-- **213 tests** · **6 migrations** · **31 API endpoints**
+- **227 tests** · **8 migrations** · **32 API endpoints**
 - 17 backend services · 11 frontend components · 11 pages
 - 0 lint warnings · frontend build clean
 
@@ -75,8 +77,9 @@ Test credentials in the dev database: `akash@example.com` / `test1234`
 | **DB role can't `CREATE DATABASE`** | Test/baseline isolation uses a temporary **schema** with `search_path`, not a separate database. |
 | **Port 5173 is load-bearing** | Backend CORS only allows `localhost:5173`. Vite is set `strictPort: true` so it fails loudly instead of drifting to 5174 — a drift once produced misleading "invalid credentials" errors. |
 | **Windows paths** | Use `./venv/Scripts/python.exe`, not `python`. Bash tool available but PowerShell is primary. |
-| **Patching LLM calls in tests** | `interview_engine` imports `complete_text` by name, so patching `llm.complete_text` does **not** affect it. Patch `interview_engine.complete_text`. Getting this wrong fires real Groq calls. |
-| **First skill-gap request is ~25s** | Embedding model loads lazily. Set `WARM_UP_MODELS=1` to move that cost to boot. |
+| **Patching LLM calls in tests** | Names are imported directly, so patch **where they are looked up**, not where they are defined: `app.routers.interview.generate_question`, not `interview_engine.generate_question`. Patching `llm.complete_text` does reach `complete_json`, which resolves it from `llm`'s globals at call time. Getting this wrong fires real Groq calls. |
+| **Groq models get withdrawn** | `llama-3.3-70b-versatile` started returning 404 `model_not_found` mid-project. The model is now `GROQ_MODEL`, defaulting to `openai/gpt-oss-120b`. |
+| **gpt-oss is a reasoning model** | It bills a private reasoning trace against the same `max_tokens` as the answer. Budgets sized for a non-reasoning model truncate mid-JSON. Keep `GROQ_REASONING_EFFORT=low`. |
 
 ---
 
@@ -100,8 +103,8 @@ Work followed a 24-phase upgrade brief. All phases were addressed.
 | **Migrations** | Alembic adopted onto the live DB via baseline + `stamp`. `create_all()` removed. |
 | **Security** | 5MB cap, magic-byte validation, filename sanitisation, parse-before-write, env CORS, UUID-typed IDs, auth rate limiting. |
 | **LLM reliability** | `services/llm.py` — Pydantic validation, one retry with the specific error fed back, then `LLMError` → 503. |
-| **Performance** | Startup **23.4s → 1.6s**. spaCy removed entirely (loaded but never called); transformers/faiss/Groq lazy. |
-| **Testing** | 0 → **213 tests**, including cross-user isolation across every router. |
+| **Performance** | Startup **23.4s → 1.2s**; install **1,331MB → 152MB**. spaCy, torch, faiss and sentence-transformers all removed; skill similarity is a committed lookup table with byte-identical output. |
+| **Testing** | 0 → **227 tests**, including cross-user isolation across every router. |
 | **Docs** | README written from verified facts (endpoints enumerated from OpenAPI, counts from pytest). |
 | **Frontend** | Full dark "blueprint" redesign; responsive at 375/768/1440; nested routes. |
 | **Docker** | All four placeholder files written. **Unverified.** |
@@ -132,7 +135,14 @@ Work followed a 24-phase upgrade brief. All phases were addressed.
 8. **`.gitignore` swallowed `.env.docker.example`** — `.env.*` with only
    `!.env.example` excepted. Now `!.env.*.example`.
 9. **Tests wrote 93 real files into `uploads/`** — truncating tables doesn't
-   remove files. `RESUME_UPLOAD_DIR` now redirects tests to a temp dir.
+   remove files. Since resolved at the source: nothing is written to disk at all
+   any more. Uploaded PDFs are parsed in memory and discarded, and avatars are
+   stored as bytes in the database, because free hosts wipe the filesystem on
+   every restart.
+10. **Roadmap generation failed 2 runs in 3** with "response was not valid JSON".
+   It was truncation, not malformed output — the reasoning trace ate the token
+   budget. `complete_text` now reports `finish_reason == "length"` honestly and
+   `complete_json` doubles the budget on retry.
 
 ---
 

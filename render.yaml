@@ -1,0 +1,48 @@
+# Render blueprint for the API. Import via Render → New → Blueprint, pointed at
+# this repository. The frontend is deployed separately as a static site (see
+# DEPLOYMENT.md); Render's free tier is used only for the backend.
+#
+# The database is NOT declared here on purpose: Render's free Postgres instance
+# is deleted after 30 days, which would silently take every account with it.
+# DEPLOYMENT.md uses Neon's free tier instead and sets DATABASE_URL by hand.
+services:
+  - type: web
+    name: ai-career-coach-api
+    runtime: python
+    plan: free
+    region: oregon
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    # Migrations own the schema, so they run before the server accepts traffic.
+    # $PORT is assigned by Render at runtime and must be honoured.
+    startCommand: alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      # Generated once by Render and then held; regenerating it would sign out
+      # every existing session.
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "30"
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-120b
+      # gpt-oss bills its reasoning trace against the completion budget; "low"
+      # keeps roadmap generation near 3s instead of 18s.
+      - key: GROQ_REASONING_EFFORT
+        value: low
+      - key: GITHUB_CACHE_MINUTES
+        value: "60"
+      # Set these in the Render dashboard, not here — they are secrets, and
+      # CORS_ORIGINS is not known until the frontend has its URL.
+      - key: DATABASE_URL
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false

@@ -10,9 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    # Keep the model cache inside the image rather than a per-user home dir.
-    HF_HOME=/opt/models
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
@@ -20,18 +18,13 @@ WORKDIR /app
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Bake the sentence-transformer into the image. Without this the first skill-gap
-# request in a fresh container downloads ~90MB, which fails outright in an
-# air-gapped or rate-limited environment.
-RUN python -c "from sentence_transformers import SentenceTransformer; \
-SentenceTransformer('all-MiniLM-L6-v2')"
-
 COPY backend/ .
 
-# Uploads live on a volume; create the mount point with the right owner first.
-RUN mkdir -p uploads/avatars \
-    && useradd --create-home --uid 1000 appuser \
-    && chown -R appuser:appuser /app /opt/models
+# Nothing is written to disk at runtime: resumes are parsed in memory and never
+# stored, and avatars live in the database, so the image needs no writable
+# volume and no model cache.
+RUN useradd --create-home --uid 1000 appuser \
+    && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 8000
@@ -39,4 +32,7 @@ EXPOSE 8000
 # Migrations own the schema, so apply them before serving. Running this in the
 # entrypoint rather than the image build means it happens against the real
 # database, once it's reachable.
-CMD ["sh", "-c", "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"]
+#
+# $PORT is honoured because most managed hosts assign the port at runtime;
+# it falls back to 8000 for compose and local use.
+CMD ["sh", "-c", "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]

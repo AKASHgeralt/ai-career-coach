@@ -16,15 +16,39 @@ from pydantic import BaseModel, ValidationError
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
+# Configurable because model availability changes: llama-3.3-70b-versatile was
+# hardcoded here and later became unavailable on this account, which broke every
+# AI feature with a 404. Override with GROQ_MODEL without touching code.
+DEFAULT_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+
+# gpt-oss models are *reasoning* models: they emit a private reasoning trace that
+# is billed against the same completion budget as the answer. Measured on the
+# roadmap prompt, that trace ran 600-1000 tokens at the default effort and pushed
+# the JSON past max_tokens, so two runs in three arrived truncated. "low" cuts it
+# to ~10-40 tokens and roadmap latency from ~18s to ~4s, with identical grades on
+# the evaluation prompt (strong answer 8, weak answer 2 at both settings).
+# Set to "none" to omit the parameter for a model that doesn't accept it.
+REASONING_EFFORT = os.getenv("GROQ_REASONING_EFFORT", "low")
 
 T = TypeVar("T", bound=BaseModel)
 
 _client = None
+# Flipped off if the configured model rejects reasoning_effort, since GROQ_MODEL
+# can point at a non-reasoning model.
+_send_reasoning_effort = REASONING_EFFORT not in ("", "none")
 
 
 class LLMError(RuntimeError):
     """The model could not produce a usable, schema-valid response."""
+
+
+class LLMTruncated(LLMError):
+    """The model hit the token ceiling mid-answer.
+
+    Distinct from a malformed reply: the text was well-formed, it just stopped.
+    Re-prompting at the same ceiling cannot fix it, so complete_json raises the
+    budget instead of just asking again.
+    """
 
 
 def get_client():
@@ -70,20 +94,46 @@ def complete_text(
     max_tokens: int = 500,
 ) -> str:
     """Plain text completion. Raises LLMError rather than leaking client errors."""
-    try:
-        response = get_client().chat.completions.create(
+    global _send_reasoning_effort
+
+    def _call(with_effort: bool):
+        extra = {"reasoning_effort": REASONING_EFFORT} if with_effort else {}
+        return get_client().chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             model=model,
             temperature=temperature,
             max_tokens=max_tokens,
+            **extra,
         )
+
+    try:
+        try:
+            response = _call(_send_reasoning_effort)
+        except Exception as exc:
+            # A non-reasoning model rejects the parameter outright. Fall back once
+            # and stop sending it, rather than failing every later call too.
+            if not _send_reasoning_effort or "reasoning_effort" not in str(exc):
+                raise
+            logger.info("Model %s rejected reasoning_effort; disabling it", model)
+            _send_reasoning_effort = False
+            response = _call(False)
     except LLMError:
         raise
     except Exception as exc:
         logger.warning("LLM text call failed: %s", exc)
         raise LLMError("The AI service is unavailable right now") from exc
 
-    content = (response.choices[0].message.content or "").strip()
+    choice = response.choices[0]
+    content = (choice.message.content or "").strip()
+
+    # Checked before the empty test: a reasoning model that spends its whole
+    # budget thinking returns empty content with finish_reason "length", and
+    # "returned an empty response" would send the caller looking in the wrong
+    # place. Truncation is a budget problem, and it says so.
+    if choice.finish_reason == "length":
+        raise LLMTruncated(
+            f"The AI service's reply was cut off at the {max_tokens}-token limit"
+        )
     if not content:
         raise LLMError("The AI service returned an empty response")
     return content
@@ -106,11 +156,23 @@ def complete_json(
     """
     attempt_prompt = prompt
     last_error = "unknown error"
+    budget = max_tokens
 
     for attempt in range(retries + 1):
-        raw = complete_text(
-            attempt_prompt, model=model, temperature=temperature, max_tokens=max_tokens
-        )
+        try:
+            raw = complete_text(
+                attempt_prompt, model=model, temperature=temperature, max_tokens=budget
+            )
+        except LLMTruncated as exc:
+            # Asking again at the same ceiling would truncate again. Give the
+            # retry room to finish instead of spending it on an identical failure.
+            last_error = str(exc)
+            logger.warning(
+                "LLM response truncated at %d tokens (attempt %d/%d)",
+                budget, attempt + 1, retries + 1,
+            )
+            budget *= 2
+            continue
 
         try:
             payload = json.loads(extract_json(raw))

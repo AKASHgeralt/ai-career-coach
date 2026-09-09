@@ -156,3 +156,57 @@ class TestDimensionsAreOptional:
                '{"technical": 99, "problem_solving": 6, "communication": 7}}')
         with pytest.raises(LLMError):
             self._evaluate(monkeypatch, bad, bad)
+
+
+class TestTruncationIsReportedHonestly:
+    """A reply cut off at the token ceiling is a budget problem, not bad JSON.
+
+    gpt-oss models spend part of the completion budget on a private reasoning
+    trace, so a ceiling sized for a non-reasoning model truncates the answer
+    mid-string. That surfaced as "response was not valid JSON", which points
+    the reader at the model's formatting instead of at the token limit.
+    """
+
+    class _Choice:
+        def __init__(self, content, finish_reason):
+            self.message = type("M", (), {"content": content})()
+            self.finish_reason = finish_reason
+
+    def _client_returning(self, monkeypatch, content, finish_reason):
+        choice = self._Choice(content, finish_reason)
+        response = type("R", (), {"choices": [choice]})()
+        create = lambda **kwargs: response
+        client = type("C", (), {
+            "chat": type("Ch", (), {"completions": type("Co", (), {"create": staticmethod(create)})()})()
+        })()
+        monkeypatch.setattr(llm, "get_client", lambda: client)
+
+    def test_truncated_reply_names_the_token_limit(self, monkeypatch):
+        self._client_returning(monkeypatch, '{"score": 9, "lab', "length")
+        with pytest.raises(llm.LLMTruncated) as exc:
+            llm.complete_text("p", max_tokens=400)
+        assert "cut off" in str(exc.value) and "400" in str(exc.value)
+
+    def test_truncation_is_an_llm_error_for_existing_handlers(self):
+        # main.py maps LLMError to a 503; truncation must keep taking that path.
+        assert issubclass(llm.LLMTruncated, LLMError)
+
+    def test_empty_content_at_the_ceiling_is_not_called_empty(self, monkeypatch):
+        # All budget spent reasoning: content is empty, but the cause is the limit.
+        self._client_returning(monkeypatch, "", "length")
+        with pytest.raises(llm.LLMTruncated):
+            llm.complete_text("p", max_tokens=200)
+
+    def test_retry_raises_the_budget_instead_of_repeating_it(self, monkeypatch):
+        budgets = []
+
+        def fake_complete_text(prompt, **kwargs):
+            budgets.append(kwargs["max_tokens"])
+            if len(budgets) == 1:
+                raise llm.LLMTruncated("cut off at 1000")
+            return '{"score": 9, "label": "ok"}'
+
+        monkeypatch.setattr(llm, "complete_text", fake_complete_text)
+        out = complete_json("p", Demo, max_tokens=1000)
+        assert out.score == 9
+        assert budgets == [1000, 2000], "retry must get more room, not the same ceiling"

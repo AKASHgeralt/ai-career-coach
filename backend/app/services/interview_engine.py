@@ -105,7 +105,7 @@ def generate_question(job_role: str, difficulty: str, previous_questions: list[s
     """Raises LLMError if the model can't produce a question."""
     return complete_text(
         question_prompt(job_role, difficulty, previous_questions or []),
-        max_tokens=200,
+        max_tokens=800,
         temperature=0.8,
     )
 
@@ -120,7 +120,7 @@ def evaluate_answer(question: str, answer: str, job_role: str) -> dict:
     evaluation = complete_json(
         evaluation_prompt(question, answer, job_role),
         AnswerEvaluation,
-        max_tokens=400,
+        max_tokens=1000,
         temperature=0.3,
     )
     return evaluation.model_dump()

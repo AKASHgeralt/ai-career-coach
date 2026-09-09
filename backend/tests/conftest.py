@@ -12,10 +12,8 @@ database, built by running the real Alembic migrations. That means:
 The schema is dropped afterwards regardless of outcome.
 """
 import os
-import shutil
 import subprocess
 import sys
-import tempfile
 from urllib.parse import urlsplit, urlunsplit
 
 import pytest
@@ -29,17 +27,6 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(BACKEND, ".env"))
 
 TEST_SCHEMA = "career_coach_test"
-
-# Point uploads at a temp directory before anything imports the resumes router,
-# which reads this at import time. Without it, integration tests would litter
-# the real uploads/ folder with files the database truncation never removes.
-_TEST_UPLOADS = tempfile.mkdtemp(prefix="career_coach_test_uploads_")
-os.environ["RESUME_UPLOAD_DIR"] = _TEST_UPLOADS
-
-
-def pytest_sessionfinish(session, exitstatus):
-    shutil.rmtree(_TEST_UPLOADS, ignore_errors=True)
-
 
 def _schema_url(base_url: str, schema: str) -> str:
     parts = urlsplit(base_url)

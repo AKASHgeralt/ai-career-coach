@@ -21,7 +21,6 @@ from app.schemas.resume import ResumeVersionHistory, ResumeComparison
 import fitz  # PyMuPDF
 import logging
 import os
-import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +28,6 @@ router = APIRouter(
     prefix="/api/resumes",
     tags=["Resumes"]
 )
-
-# Configurable so tests can write to a temporary directory instead of the
-# real upload folder.
-UPLOAD_DIR = os.getenv("RESUME_UPLOAD_DIR", "uploads")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Matches the 5MB the upload UI promises. Enforced server-side because the
 # client-side check is trivially bypassed.
@@ -133,33 +127,20 @@ def upload_resume(
     ]
     version = next_version_for(existing_versions)
 
-    # Always a server-generated name, so a hostile filename can never influence
-    # where the bytes land.
-    file_path = os.path.join(UPLOAD_DIR, f"{uuid.uuid4()}.pdf")
-    with open(file_path, "wb") as f:
-        f.write(content)
-
-    try:
-        resume = Resume(
-            user_id=current_user.id,
-            file_name=safe_name,
-            file_path=file_path,
-            parsed_text=parsed_text,
-            ats_score=ats_score,
-            version=version,
-        )
-        db.add(resume)
-        db.commit()
-        db.refresh(resume)
-    except Exception:
-        # Roll the file back if the row couldn't be written; a failed cleanup
-        # must not mask the original error.
-        db.rollback()
-        try:
-            os.remove(file_path)
-        except OSError:
-            logger.warning("Could not remove orphaned upload %s", file_path)
-        raise
+    # The PDF bytes are not persisted. extract_text_from_pdf has already pulled
+    # everything the app uses out of them, and no endpoint ever served the file
+    # back, so writing it only created orphan-cleanup paths and a dependency on
+    # a writable disk that the free hosting tiers do not provide.
+    resume = Resume(
+        user_id=current_user.id,
+        file_name=safe_name,
+        parsed_text=parsed_text,
+        ats_score=ats_score,
+        version=version,
+    )
+    db.add(resume)
+    db.commit()
+    db.refresh(resume)
 
     return resume
 
@@ -265,9 +246,6 @@ def delete_resume(
             ).delete(synchronize_session=False)
         db.query(Recommendation).filter(Recommendation.gap_id.in_(gap_ids)).delete(synchronize_session=False)
         db.query(SkillGap).filter(SkillGap.resume_id == resume.id).delete(synchronize_session=False)
-
-    if os.path.exists(resume.file_path):
-        os.remove(resume.file_path)
 
     db.delete(resume)
     db.commit()

@@ -117,6 +117,6 @@ def get_recommendations(missing_skills: list[str], target_role: str) -> dict:
         recommendations_prompt(", ".join(missing_skills), target_role),
         RecommendationBundle,
         temperature=0.7,
-        max_tokens=2000,
+        max_tokens=4000,
     )
     return bundle.model_dump()

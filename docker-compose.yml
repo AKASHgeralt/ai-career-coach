@@ -31,10 +31,8 @@ services:
       # nginx proxies /api from the frontend's own origin, so no browser
       # request is cross-origin. Kept configurable for direct API access.
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
-      # Pay the embedding-model load at boot so no user request eats it.
-      WARM_UP_MODELS: ${WARM_UP_MODELS:-1}
-    volumes:
-      - uploads:/app/uploads
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
+      GROQ_REASONING_EFFORT: ${GROQ_REASONING_EFFORT:-low}
     depends_on:
       db:
         condition: service_healthy
@@ -42,8 +40,7 @@ services:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/ >/dev/null || exit 1"]
       interval: 15s
       timeout: 5s
-      # Generous: the container loads the embedding model before serving.
-      start_period: 90s
+      start_period: 15s
       retries: 5
     restart: unless-stopped
 
@@ -60,4 +57,3 @@ services:
 
 volumes:
   pgdata:
-  uploads:

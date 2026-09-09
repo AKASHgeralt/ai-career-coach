@@ -1,33 +1,7 @@
 import re
-import threading
 
 from app.services.nlp import find_skills_in_text
-
-EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
-
-# The sentence-transformer pulls in torch and transformers, which together cost
-# ~20s to import. Deferring both the import and the model load keeps startup
-# fast and means anything that never runs a semantic comparison (auth, resume
-# upload, the whole test suite) never pays for it. Loaded once, then reused.
-_model = None
-_model_lock = threading.Lock()
-
-
-def get_model():
-    """Load the embedding model on first use, then return the cached instance."""
-    global _model
-    if _model is None:
-        with _model_lock:
-            if _model is None:  # re-check: another thread may have won the race
-                from sentence_transformers import SentenceTransformer
-                _model = SentenceTransformer(EMBEDDING_MODEL_NAME)
-    return _model
-
-
-def warm_up() -> None:
-    """Eagerly load the model, for callers that prefer a slow boot to a slow
-    first request. Wired to the app lifespan behind an env flag."""
-    get_model()
+from app.services.skill_similarity import similarity
 
 def extract_job_skills(job_description: str) -> list[str]:
     return find_skills_in_text(job_description)
@@ -81,10 +55,12 @@ STATUS_PARTIAL = "PARTIAL"
 STATUS_MISSING = "MISSING"
 
 
-def classify_similarity(similarity: float) -> str:
-    if similarity >= MATCH_THRESHOLD:
+def classify_similarity(score: float) -> str:
+    # Parameter is `score`, not `similarity`, to avoid shadowing the imported
+    # similarity() lookup used elsewhere in this module.
+    if score >= MATCH_THRESHOLD:
         return STATUS_MATCHED
-    if similarity >= PARTIAL_THRESHOLD:
+    if score >= PARTIAL_THRESHOLD:
         return STATUS_PARTIAL
     return STATUS_MISSING
 
@@ -111,31 +87,17 @@ def compute_skill_gap(resume_skills: list[str], job_skills: list[str], threshold
     # rather than just that it is. Exact hits are 1.0 by definition.
     similarities = {skill: 1.0 for skill in matched}
 
-    # For anything not an exact match, fall back to semantic similarity to catch
-    # near-synonyms the fixed skill list doesn't already alias (e.g. related but
-    # differently-worded technologies). A stricter threshold than plain "close
-    # enough" keeps this from flagging merely-related-but-different skills.
-    if unresolved:
-        import faiss  # deferred with the model — only needed for this path
-
-        model = get_model()
-        resume_embeddings = model.encode(resume_skills, convert_to_numpy=True)
-        job_embeddings = model.encode(unresolved, convert_to_numpy=True)
-
-        faiss.normalize_L2(resume_embeddings)
-        faiss.normalize_L2(job_embeddings)
-
-        dimension = resume_embeddings.shape[1]
-        index = faiss.IndexFlatIP(dimension)
-        index.add(resume_embeddings)
-
-        for i, job_skill in enumerate(unresolved):
-            job_vec = job_embeddings[i].reshape(1, -1)
-            distances, _ = index.search(job_vec, 1)
-            similarity = float(distances[0][0])
-            similarities[job_skill] = max(0.0, min(1.0, similarity))
-            if similarity >= threshold:
-                matched.append(job_skill)
+    # Anything not an exact match is scored against a precomputed similarity
+    # table. This produces identical results to the embedding model it was
+    # generated from: SKILLS_DB is a closed vocabulary, so every related pair
+    # the model recognised is already enumerated in that table. See
+    # skill_similarity.py for why carrying torch to recompute it was a bad
+    # trade.
+    for job_skill in unresolved:
+        best = max((similarity(job_skill, rs) for rs in resume_skills), default=0.0)
+        similarities[job_skill] = best
+        if best >= threshold:
+            matched.append(job_skill)
 
     matched_set = set(matched)
     # Unchanged contract: anything not matched is still reported as missing,
