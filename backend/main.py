@@ -28,6 +28,18 @@ CORS_ORIGINS = [
     if origin.strip()
 ]
 
+# Logged at startup because a CORS mismatch is invisible from the outside and
+# its symptom is misleading: the browser blocks the response, and the UI reports
+# "invalid credentials" or a bare 405 rather than a configuration problem. This
+# line makes the deployed allow-list checkable in the host's logs.
+logger.info("CORS allow-list: %s", CORS_ORIGINS)
+if os.getenv("CORS_ORIGINS") is None:
+    logger.warning(
+        "CORS_ORIGINS is not set; falling back to %s. A deployed frontend on any "
+        "other origin will have every request blocked by the browser.",
+        DEFAULT_CORS_ORIGINS,
+    )
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
